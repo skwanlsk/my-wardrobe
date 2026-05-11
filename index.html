@@ -240,7 +240,7 @@ function App(){
   /* persisted */
   const [wardrobe,setWardrobeRaw]      = useState(()=>LS.get("maw_wardrobe",SEED));
   const [calData,setCalDataRaw]        = useState(()=>LS.get("maw_cal",{}));
-  const [dateLocations,setDateLocsRaw] = useState(()=>LS.get("maw_locs",{[todayKey]:"Hong Kong"}));
+  const [dateLocations,setDateLocsRaw] = useState(()=>LS.get("maw_locs",{[todayKey]:"London"}));
 
   const setWardrobe = v=>{const nv=typeof v==="function"?v(wardrobe):v; setWardrobeRaw(nv);LS.set("maw_wardrobe",nv);};
   const setCalData  = v=>{const nv=typeof v==="function"?v(calData):v;  setCalDataRaw(nv); LS.set("maw_cal",nv);};
@@ -256,7 +256,7 @@ function App(){
   const [event,setEvent]        = useState("");
   const [aiSug,setAiSug]        = useState("");
   const [aiLoad,setAiLoad]      = useState(false);
-  const [locInput,setLocInput]  = useState(()=>LS.get("maw_locs",{[todayKey]:"Hong Kong"})[todayKey]||"Hong Kong");
+  const [locInput,setLocInput]  = useState(()=>LS.get("maw_locs",{[todayKey]:"London"})[todayKey]||"London");
   const [addMode,setAddMode]    = useState(false);
   const [uploading,setUploading]= useState(false);
   const [uploadErr,setUploadErr]= useState("");
@@ -267,7 +267,7 @@ function App(){
   const fileRef    = useRef();
   const journalRef = useRef();
 
-  const curLoc = dateLocations[selDate]||locInput||"Hong Kong";
+  const curLoc = dateLocations[selDate]||locInput||"London";
   const {wx,loading:wxLoad,err:wxErr} = useWeather(curLoc);
   const filtered = wardrobe
     .filter(i=>catFilter==="全部"||i.category===catFilter)
@@ -406,7 +406,7 @@ function App(){
 
             <Card>
               <FL>日期與活動</FL>
-              <Inp type="date" value={selDate} onChange={e=>{setSelDate(e.target.value);setLocInput(dateLocations[e.target.value]||"Hong Kong");}} style={{marginBottom:8}}/>
+              <Inp type="date" value={selDate} onChange={e=>{setSelDate(e.target.value);setLocInput(dateLocations[e.target.value]||"London");}} style={{marginBottom:8}}/>
               <Inp placeholder="活動（上班、約會、旅行…）" value={event} onChange={e=>setEvent(e.target.value)}/>
             </Card>
 
@@ -556,11 +556,11 @@ function App(){
               {Array.from({length:dim},(_,i)=>i+1).map(d=>{
                 const k=dk(d),entry=calData[k],isSel=k===selDate,isToday=k===todayKey;
                 return(
-                  <div key={k} onClick={()=>{setSelDate(k);setLocInput(dateLocations[k]||"Hong Kong");}}
+                  <div key={k} onClick={()=>{setSelDate(k);setLocInput(dateLocations[k]||"London");}}
                     style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:8,cursor:"pointer",transition:"all .12s",position:"relative",fontSize:13,background:isSel?T.accent:isToday?T.accentBg:"none",border:isToday&&!isSel?`1px solid ${T.accentL}`:"1px solid transparent",color:isSel?T.white:T.text,fontWeight:isToday?600:400}}>
                     {d}
                     {entry?.outfitIds?.length>0&&<div style={{width:4,height:4,borderRadius:"50%",background:isSel?"rgba(255,255,255,.7)":T.accent,position:"absolute",bottom:4}}/>}
-                    {dateLocations[k]&&dateLocations[k]!=="Hong Kong"&&<div style={{fontSize:7,position:"absolute",top:3,right:4,color:isSel?T.white:T.accentL}}>✈</div>}
+                    {dateLocations[k]&&dateLocations[k]!=="London"&&<div style={{fontSize:7,position:"absolute",top:3,right:4,color:isSel?T.white:T.accentL}}>✈</div>}
                   </div>
                 );
               })}

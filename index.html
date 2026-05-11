@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="zh-HK">
 <head>
 <meta charset="UTF-8"/>
@@ -35,7 +36,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-/* ── Tokens ── */
+/* ── Design tokens ── */
 const T = {
   bg:"#faf8f4", surface:"#f5f0e8", surfaceB:"#ede8df",
   border:"#ddd8ce", borderB:"#ccc5b9",
@@ -46,34 +47,43 @@ const T = {
   sans:"'DM Sans',sans-serif",
 };
 
-/* ── Constants ── */
+/* ── Helpers ── */
 const toKey = d => d.toISOString().split("T")[0];
 const todayKey = toKey(new Date());
 
-/* Open-Meteo weather code → condition + emoji */
-const WMO_MAP = {
-  0:{label:"晴天",icon:"☀️",cond:"Clear"},
-  1:{label:"大致晴朗",icon:"🌤️",cond:"Clear"},
-  2:{label:"間中多雲",icon:"⛅",cond:"Clouds"},
-  3:{label:"陰天",icon:"☁️",cond:"Clouds"},
-  45:{label:"有霧",icon:"🌫️",cond:"Mist"},
-  48:{label:"冰霧",icon:"🌫️",cond:"Mist"},
-  51:{label:"毛毛雨",icon:"🌦️",cond:"Drizzle"},
-  53:{label:"中等毛毛雨",icon:"🌦️",cond:"Drizzle"},
-  55:{label:"大毛毛雨",icon:"🌦️",cond:"Drizzle"},
-  61:{label:"小雨",icon:"🌧️",cond:"Rain"},
-  63:{label:"中雨",icon:"🌧️",cond:"Rain"},
-  65:{label:"大雨",icon:"🌧️",cond:"Rain"},
-  71:{label:"小雪",icon:"❄️",cond:"Snow"},
-  73:{label:"中雪",icon:"❄️",cond:"Snow"},
-  75:{label:"大雪",icon:"❄️",cond:"Snow"},
-  80:{label:"陣雨",icon:"🌦️",cond:"Rain"},
-  81:{label:"中等陣雨",icon:"🌧️",cond:"Rain"},
-  82:{label:"大陣雨",icon:"🌧️",cond:"Rain"},
-  95:{label:"雷暴",icon:"⛈️",cond:"Thunderstorm"},
-  99:{label:"大雷暴",icon:"⛈️",cond:"Thunderstorm"},
+/**
+ * Robustly extract the FIRST valid JSON object from a string.
+ * Handles: markdown fences, leading text, trailing text, escaped chars.
+ */
+function extractJSON(raw) {
+  if (!raw) throw new Error("Empty response");
+  // Strip markdown fences
+  let s = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  // Find first { ... } block
+  const start = s.indexOf("{");
+  if (start === -1) throw new Error("No JSON object found");
+  // Walk to find matching closing brace
+  let depth = 0, end = -1;
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === "{") depth++;
+    else if (s[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end === -1) throw new Error("Unclosed JSON object");
+  return JSON.parse(s.slice(start, end + 1));
+}
+
+/* ── Open-Meteo weather code map ── */
+const WMO = {
+  0:{l:"晴天",i:"☀️",c:"Clear"}, 1:{l:"大致晴朗",i:"🌤️",c:"Clear"},
+  2:{l:"間中多雲",i:"⛅",c:"Clouds"}, 3:{l:"陰天",i:"☁️",c:"Clouds"},
+  45:{l:"有霧",i:"🌫️",c:"Mist"}, 48:{l:"冰霧",i:"🌫️",c:"Mist"},
+  51:{l:"毛毛雨",i:"🌦️",c:"Drizzle"}, 53:{l:"中毛毛雨",i:"🌦️",c:"Drizzle"}, 55:{l:"大毛毛雨",i:"🌦️",c:"Drizzle"},
+  61:{l:"小雨",i:"🌧️",c:"Rain"}, 63:{l:"中雨",i:"🌧️",c:"Rain"}, 65:{l:"大雨",i:"🌧️",c:"Rain"},
+  71:{l:"小雪",i:"❄️",c:"Snow"}, 73:{l:"中雪",i:"❄️",c:"Snow"}, 75:{l:"大雪",i:"❄️",c:"Snow"},
+  80:{l:"陣雨",i:"🌦️",c:"Rain"}, 81:{l:"中陣雨",i:"🌧️",c:"Rain"}, 82:{l:"大陣雨",i:"🌧️",c:"Rain"},
+  95:{l:"雷暴",i:"⛈️",c:"Thunderstorm"}, 99:{l:"大雷暴",i:"⛈️",c:"Thunderstorm"},
 };
-const getWMO = code => WMO_MAP[code] || {label:"天氣未知",icon:"🌤️",cond:"Clear"};
+const getWMO = c => WMO[c] || {l:"天氣未知",i:"🌤️",c:"Clear"};
 
 const warmth = t => {
   if(t<=5)  return "非常寒冷 — 厚大衣 + 頸巾帽子必備 🧣";
@@ -101,10 +111,11 @@ const SEED = [
 
 /* ── localStorage ── */
 const LS = {
-  get:(k,def)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}},
+  get:(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}},
   set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
 };
 
+/* ── Shared styles ── */
 const stInp = {border:`1px solid ${T.border}`,borderRadius:8,padding:"9px 12px",fontSize:13,background:T.bg,color:T.text,outline:"none",width:"100%"};
 const stCard = {background:T.white,borderRadius:14,border:`1px solid ${T.border}`,padding:"16px 18px"};
 
@@ -116,7 +127,11 @@ function Pill({label,active,onClick,emoji}){
   return <button onClick={onClick} style={{padding:"4px 12px",borderRadius:20,fontSize:12,background:active?T.accent:T.white,color:active?T.white:T.textM,border:`1px solid ${active?T.accent:T.border}`,cursor:"pointer",transition:"all .15s",fontWeight:active?500:400,display:"flex",alignItems:"center",gap:4,flexShrink:0}}>{emoji&&<span>{emoji}</span>}{label}</button>;
 }
 function Btn({children,variant="primary",style,...p}){
-  const vs={primary:{background:T.accent,color:T.white,border:"none"},ghost:{background:T.surface,color:T.textM,border:`1px solid ${T.border}`},sm:{background:T.accent,color:T.white,border:"none",fontSize:11,padding:"5px 13px"}};
+  const vs={
+    primary:{background:T.accent,color:T.white,border:"none"},
+    ghost:{background:T.surface,color:T.textM,border:`1px solid ${T.border}`},
+    sm:{background:T.accent,color:T.white,border:"none",fontSize:11,padding:"5px 13px"},
+  };
   return <button style={{borderRadius:8,fontSize:13,fontWeight:500,cursor:"pointer",padding:"9px 16px",transition:"opacity .15s",...vs[variant],...style}} {...p}>{children}</button>;
 }
 
@@ -142,87 +157,96 @@ function ClothingRow({item,selected,onToggle,onDelete}){
   );
 }
 
-/* ── Weather Hook ── */
+/* ── Real weather via Open-Meteo (free, no key needed) ── */
 function useWeather(city){
-  const [wx,setWx]       = useState(null);
-  const [loading,setLoading] = useState(false);
-  const [err,setErr]     = useState(null);
-  const cache            = useRef({});
+  const [wx,setWx]         = useState(null);
+  const [loading,setLoad]  = useState(false);
+  const [err,setErr]       = useState(null);
+  const cache              = useRef({});
 
   useEffect(()=>{
-    if(!city||city.trim().length<2){ setWx(null); return; }
-    const key = city.trim().toLowerCase();
-    if(cache.current[key]){ setWx(cache.current[key]); return; }
-    setLoading(true); setErr(null);
+    if(!city||city.trim().length<2){setWx(null);return;}
+    const key=city.trim().toLowerCase();
+    if(cache.current[key]){setWx(cache.current[key]);return;}
+    setLoad(true); setErr(null);
     (async()=>{
       try{
-        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`);
-        const geoData = await geoRes.json();
-        if(!geoData.results?.length) throw new Error("找不到城市");
-        const {latitude:lat, longitude:lon, name:cityName, country} = geoData.results[0];
-        const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weathercode&wind_speed_unit=kmh&timezone=auto`);
-        const wxData = await wxRes.json();
-        const cur = wxData.current;
+        // 1. Geocode
+        const gr = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city.trim())}&count=1&language=zh&format=json`);
+        const gd = await gr.json();
+        if(!gd.results?.length) throw new Error("找不到城市，請用英文輸入");
+        const {latitude:lat,longitude:lon,name:cname,country} = gd.results[0];
+        // 2. Weather
+        const wr = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weathercode&timezone=auto`);
+        const wd = await wr.json();
+        const cur = wd.current;
         const wmo = getWMO(cur.weathercode);
-        const result = {city: `${cityName}, ${country}`,temp: Math.round(cur.temperature_2m),feels: Math.round(cur.apparent_temperature),humidity: cur.relative_humidity_2m,condition: wmo.cond,icon: wmo.icon,description: wmo.label};
-        cache.current[key] = result;
-        setWx(result);
-      } catch(e){ setErr(e.message||"天氣獲取失敗"); }
-      setLoading(false);
+        const result = {city:`${cname}, ${country}`,temp:Math.round(cur.temperature_2m),feels:Math.round(cur.apparent_temperature),humidity:cur.relative_humidity_2m,icon:wmo.i,description:wmo.l,condition:wmo.c};
+        cache.current[key]=result; setWx(result);
+      }catch(e){setErr(e.message||"天氣獲取失敗");}
+      setLoad(false);
     })();
   },[city]);
-  return {wx, loading, err};
+  return {wx,loading,err};
 }
 
-/* ── API via Vercel (修正位：處理 Evolink 數據結構) ── */
+/* ── Claude via /api/claude (Vercel proxy → EvoLink) ── */
 async function callClaude(body){
   const res = await fetch("/api/claude",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify(body),
+    body:JSON.stringify(body),
   });
-  const data = await res.json();
-  if(data.error) throw new Error(data.error.message||data.error);
-
-  // 重要：將 Evolink (OpenAI 格式) 轉回 App 預期的 content 格式
-  if (data.choices && data.choices[0].message) {
-    return {
-      content: [{ type: "text", text: data.choices[0].message.content }]
-    };
+  if(!res.ok){
+    const e = await res.text();
+    throw new Error(`API error ${res.status}: ${e}`);
   }
+  const data = await res.json();
+  if(data.error) throw new Error(JSON.stringify(data.error));
   return data;
 }
 
+/* ── AI clothing analyser — robust JSON extraction ── */
 async function analyseClothing(dataUrl, mimeType){
   const b64 = dataUrl.split(",")[1];
   const data = await callClaude({
-    model:"claude-sonnet-4-20250514", max_tokens:300,
-    messages:[{role:"user",content:[
-      {type:"image",source:{type:"base64",media_type:mimeType,data:b64}},
-      {type:"text",text:`你係時裝助手。分析呢張衣物相片。
-回覆 ONLY 一個 JSON object，唔好任何其他文字或 markdown：
-{"name":"<廣東話衣物名稱，例如：白色棉質上衣>","category":"<只能係：上衣|褲/裙|外套|鞋|配件 其中一個>","occasions":["<從以下選1-3個：返工|見客|約會|度假|郊遊|Party|日常|運動>"],"emoji":"<單一最適合emoji>"}`},
-    ]}],
+    model:"claude-sonnet-4-20250514",
+    max_tokens:400,
+    messages:[{
+      role:"user",
+      content:[
+        {type:"image", source:{type:"base64", media_type:mimeType, data:b64}},
+        {type:"text",  text:
+`分析呢張衣物相片，回覆一個 JSON object。
+必須係純 JSON，唔好有任何其他文字、解釋或 markdown。
+格式如下（直接輸出，唔好加 \`\`\`）：
+{"name":"白色棉質上衣","category":"上衣","occasions":["日常","約會"],"emoji":"👕"}
+
+category 只能係以下其中一個：上衣、褲/裙、外套、鞋、配件
+occasions 從以下選 1-3 個：返工、見客、約會、度假、郊遊、Party、日常、運動`
+        },
+      ],
+    }],
   });
-  
-  // 修正位：防呆處理。確保拎到嘅係文字，並用 Regex 抽取出 JSON
-  const txt = data.content?.find(b=>b.type==="text")?.text||"";
-  const jsonMatch = txt.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("AI 回傳格式唔係 JSON，請再試一次");
-  
-  return JSON.parse(jsonMatch[0]);
+
+  const raw = data.content?.find(b=>b.type==="text")?.text || "";
+  return extractJSON(raw);  // robust extraction handles any extra text
 }
 
-/* ── MAIN APP ── */
+/* ════════════════════════════════════════════════════════════════════
+   MAIN APP
+════════════════════════════════════════════════════════════════════ */
 function App(){
+  /* persisted */
   const [wardrobe,setWardrobeRaw]      = useState(()=>LS.get("maw_wardrobe",SEED));
   const [calData,setCalDataRaw]        = useState(()=>LS.get("maw_cal",{}));
-  const [dateLocations,setDateLocsRaw] = useState(()=>LS.get("maw_locs",{[todayKey]:"London"}));
+  const [dateLocations,setDateLocsRaw] = useState(()=>LS.get("maw_locs",{[todayKey]:"Hong Kong"}));
 
-  const setWardrobe = v=>{const nv=typeof v==="function"?v(wardrobe):v; setWardrobeRaw(nv); LS.set("maw_wardrobe",nv);};
-  const setCalData  = v=>{const nv=typeof v==="function"?v(calData):v;  setCalDataRaw(nv);  LS.set("maw_cal",nv);};
-  const setDateLocs = v=>{const nv=typeof v==="function"?v(dateLocations):v; setDateLocsRaw(nv); LS.set("maw_locs",nv);};
+  const setWardrobe = v=>{const nv=typeof v==="function"?v(wardrobe):v; setWardrobeRaw(nv);LS.set("maw_wardrobe",nv);};
+  const setCalData  = v=>{const nv=typeof v==="function"?v(calData):v;  setCalDataRaw(nv); LS.set("maw_cal",nv);};
+  const setDateLocs = v=>{const nv=typeof v==="function"?v(dateLocations):v; setDateLocsRaw(nv);LS.set("maw_locs",nv);};
 
+  /* UI */
   const [tab,setTab]            = useState("plan");
   const [catFilter,setCat]      = useState("全部");
   const [occFilter,setOcc]      = useState("全部");
@@ -232,7 +256,7 @@ function App(){
   const [event,setEvent]        = useState("");
   const [aiSug,setAiSug]        = useState("");
   const [aiLoad,setAiLoad]      = useState(false);
-  const [locInput,setLocInput]  = useState(()=>LS.get("maw_locs",{[todayKey]:"London"})[todayKey]||"London");
+  const [locInput,setLocInput]  = useState(()=>LS.get("maw_locs",{[todayKey]:"Hong Kong"})[todayKey]||"Hong Kong");
   const [addMode,setAddMode]    = useState(false);
   const [uploading,setUploading]= useState(false);
   const [uploadErr,setUploadErr]= useState("");
@@ -243,7 +267,7 @@ function App(){
   const fileRef    = useRef();
   const journalRef = useRef();
 
-  const curLoc = dateLocations[selDate]||locInput||"London";
+  const curLoc = dateLocations[selDate]||locInput||"Hong Kong";
   const {wx,loading:wxLoad,err:wxErr} = useWeather(curLoc);
   const filtered = wardrobe
     .filter(i=>catFilter==="全部"||i.category===catFilter)
@@ -256,50 +280,53 @@ function App(){
   const dk=d=>`${yr}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
   const selEntry=calData[selDate];
 
-  const toggleOutfit = item => setOutfit(p=>p.find(i=>i.id===item.id)?p.filter(i=>i.id!==item.id):[...p,item]);
-  const updateLoc    = loc  => { setLocInput(loc); setDateLocs(p=>({...p,[selDate]:loc})); };
+  const toggleOutfit = item=>setOutfit(p=>p.find(i=>i.id===item.id)?p.filter(i=>i.id!==item.id):[...p,item]);
+  const updateLoc    = loc=>{setLocInput(loc);setDateLocs(p=>({...p,[selDate]:loc}));};
 
-  const saveToCalendar = () => {
-    if(!outfit.length) return;
+  const saveToCalendar = ()=>{
+    if(!outfit.length)return;
     setCalData(p=>({...p,[selDate]:{...p[selDate],location:curLoc,outfitIds:outfit.map(i=>i.id),label:event||"我的 Outfit"}}));
     setAiSug("");
   };
 
-  const getAI = async() => {
+  const getAI = async()=>{
     setAiLoad(true); setAiSug("");
-    const list = wardrobe.map(i=>`${i.name}(${i.category})`).join(", ");
-    const w = wx?`${wx.temp}°C，${wx.description}，體感${wx.feels}°C`:"天氣未知";
+    const list=wardrobe.map(i=>`${i.name}(${i.category})`).join(", ");
+    const w=wx?`${wx.temp}°C，${wx.description}，體感${wx.feels}°C`:"天氣未知";
     try{
-      const data = await callClaude({
-        model:"claude-sonnet-4-20250514", max_tokens:300,
-        messages:[{role:"user",content:
-          `你係高端時尚造型師，用廣東話回答。衣櫃：${list}。天氣(${curLoc})：${w}。活動：${event||"日常外出"}。建議一套具體outfit（列衣物名），一句說明搭配原因。100字內。`
-        }],
+      const data=await callClaude({model:"claude-sonnet-4-20250514",max_tokens:300,
+        messages:[{role:"user",content:`你係高端時尚造型師，用廣東話回答。衣櫃：${list}。天氣(${curLoc})：${w}。活動：${event||"日常外出"}。建議一套具體outfit（列衣物名），一句說明搭配原因。100字內。`}],
       });
-      // 修正位：讀取方式保持一致
       setAiSug(data.content?.find(b=>b.type==="text")?.text||"暫時無法獲取建議");
-    }catch(e){ setAiSug("AI 建議暫時不可用："+e.message); }
+    }catch(e){setAiSug("AI 建議暫時不可用："+e.message);}
     setAiLoad(false);
   };
 
-  const handleWardrobeUpload = async e => {
-    const file=e.target.files[0]; if(!file) return;
+  const handleWardrobeUpload = async e=>{
+    const file=e.target.files[0]; if(!file)return;
     setUploadErr(""); setUploading(true);
     const reader=new FileReader();
     reader.onload=async ev=>{
       const dataUrl=ev.target.result;
       const mimeType=file.type||"image/jpeg";
       try{
-        const info = await analyseClothing(dataUrl,mimeType);
-        setWardrobe(p=>[...p,{id:Date.now(),
-          name:info.name||file.name.replace(/\.[^.]+$/,""),
-          category:info.category||"上衣",
-          occasions:info.occasions||["日常"],
-          emoji:info.emoji||"👕",
-          img:dataUrl, color:"#c4b9a8"}]);
+        const info=await analyseClothing(dataUrl,mimeType);
+        // Validate fields before saving
+        const validCats=["上衣","褲/裙","外套","鞋","配件"];
+        const validOccs=["返工","見客","約會","度假","郊遊","Party","日常","運動"];
+        setWardrobe(p=>[...p,{
+          id:Date.now(),
+          name: (typeof info.name==="string"&&info.name.length>0) ? info.name : file.name.replace(/\.[^.]+$/,""),
+          category: validCats.includes(info.category) ? info.category : "上衣",
+          occasions: Array.isArray(info.occasions) ? info.occasions.filter(o=>validOccs.includes(o)) : ["日常"],
+          emoji: (typeof info.emoji==="string"&&info.emoji.length>0) ? info.emoji : "👕",
+          img:dataUrl, color:"#c4b9a8",
+        }]);
         setAddMode(false);
       }catch(err){
         setUploadErr("AI 識別失敗："+err.message);
+        // Still save with placeholder
+        setWardrobe(p=>[...p,{id:Date.now(),name:file.name.replace(/\.[^.]+$/,""),category:newCat,occasions:[],emoji:CAT_EMOJI[newCat]||"👕",img:dataUrl,color:"#c4b9a8"}]);
       }
       setUploading(false);
     };
@@ -307,28 +334,30 @@ function App(){
     e.target.value="";
   };
 
-  const addManual = () => {
-    if(!newName.trim()) return;
+  const addManual=()=>{
+    if(!newName.trim())return;
     setWardrobe(p=>[...p,{id:Date.now(),name:newName.trim(),category:newCat,occasions:newOccs,emoji:CAT_EMOJI[newCat]||"👕",color:"#c4b9a8"}]);
     setNewName(""); setNewOccs([]); setAddMode(false);
   };
 
-  const handleJournalUpload = e => {
-    const file=e.target.files[0]; if(!file) return;
+  const handleJournalUpload=e=>{
+    const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
     reader.onload=ev=>setCalData(p=>({...p,[selDate]:{...p[selDate],journalImg:ev.target.result}}));
     reader.readAsDataURL(file);
     e.target.value="";
   };
 
-  const saveEdit = () => {
-    if(!editItem) return;
+  const saveEdit=()=>{
+    if(!editItem)return;
     setWardrobe(p=>p.map(i=>i.id===editItem.id?editItem:i));
     setEditItem(null);
   };
 
+  /* ── RENDER ── */
   return(
     <div style={{height:"100dvh",background:T.bg,color:T.text,maxWidth:480,margin:"0 auto",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
       {/* HEADER */}
       <div style={{flexShrink:0,paddingTop:`max(env(safe-area-inset-top,0px),20px)`,padding:"20px 22px 0",background:"linear-gradient(to bottom,#f5efe4,#faf8f4)",borderBottom:`1px solid ${T.border}`}}>
         <div style={{fontSize:10,letterSpacing:"0.22em",color:T.accentL,textTransform:"uppercase"}}>Digital Wardrobe</div>
@@ -341,117 +370,281 @@ function App(){
         </div>
       </div>
 
+      {/* SCROLL AREA */}
       <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"18px 16px 32px"}}>
+
+        {/* ══ PLAN ══ */}
         {tab==="plan"&&(
           <div className="mfade" style={{display:"flex",flexDirection:"column",gap:13}}>
+
             <Card>
               <FL>地點 — 旅行日可更改城市</FL>
               <div style={{display:"flex",gap:8,marginBottom:12}}>
-                <Inp value={locInput} placeholder="輸入城市" onChange={e=>setLocInput(e.target.value)} onBlur={e=>updateLoc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&updateLoc(e.target.value)} style={{flex:1}}/>
-                <Btn variant="sm" onClick={()=>updateLoc(locInput)}>更新</Btn>
+                <Inp value={locInput} placeholder="輸入城市（建議英文）"
+                  onChange={e=>setLocInput(e.target.value)}
+                  onBlur={e=>updateLoc(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&updateLoc(e.target.value)}
+                  style={{flex:1}}/>
+                <Btn variant="sm" onClick={()=>updateLoc(locInput)} style={{flexShrink:0}}>更新</Btn>
               </div>
-              {wxLoad ? <div className="mshim" style={{height:60}}/> : wx ? (
-                <div style={{display:"flex",alignItems:"center",gap:14,background:T.accentBg,borderRadius:10,padding:"12px 14px"}}>
-                  <span style={{fontSize:32}}>{wx.icon}</span>
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:T.serif,fontSize:20}}>{wx.temp}°C <span style={{fontSize:12,color:T.textM}}>體感 {wx.feels}°C</span></div>
-                    <div style={{fontSize:11,color:T.textM}}>{wx.city} · {wx.description}</div>
-                  </div>
-                </div>
-              ) : <div style={{fontSize:12,color:T.textL}}>輸入城市獲取天氣</div>}
+              {wxLoad
+                ? <div className="mshim" style={{height:60}}/>
+                : wx
+                  ? <div style={{display:"flex",alignItems:"center",gap:14,background:T.accentBg,borderRadius:10,padding:"12px 14px"}}>
+                      <span style={{fontSize:32}}>{wx.icon}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:T.serif,fontSize:20,fontWeight:400}}>{wx.temp}°C <span style={{fontSize:12,fontWeight:300,color:T.textM}}>體感 {wx.feels}°C</span></div>
+                        <div style={{fontSize:11,color:T.textM,marginTop:1}}>{wx.city} · {wx.description} · 濕度 {wx.humidity}%</div>
+                        <div style={{fontSize:11,color:T.accent,marginTop:3}}>{warmth(wx.temp)}</div>
+                      </div>
+                    </div>
+                  : wxErr
+                    ? <div style={{fontSize:12,color:T.danger,background:"#fdf0ee",borderRadius:8,padding:"10px 12px"}}>⚠️ {wxErr}</div>
+                    : <div style={{fontSize:12,color:T.textL,background:T.surface,borderRadius:8,padding:"10px 12px"}}>輸入城市後自動獲取實時天氣 ☁️</div>
+              }
             </Card>
 
             <Card>
               <FL>日期與活動</FL>
-              <Inp type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{marginBottom:8}}/>
-              <Inp placeholder="活動" value={event} onChange={e=>setEvent(e.target.value)}/>
+              <Inp type="date" value={selDate} onChange={e=>{setSelDate(e.target.value);setLocInput(dateLocations[e.target.value]||"Hong Kong");}} style={{marginBottom:8}}/>
+              <Inp placeholder="活動（上班、約會、旅行…）" value={event} onChange={e=>setEvent(e.target.value)}/>
             </Card>
 
             <Card style={{borderColor:T.accentL,background:T.accentBg}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                 <div style={{fontSize:12,color:T.accent,fontWeight:500}}>✦ AI 造型師</div>
-                <Btn variant="sm" onClick={getAI} disabled={aiLoad}>{aiLoad?<span className="mspin">⟳</span>:"獲取建議"}</Btn>
+                <Btn variant="sm" onClick={getAI} disabled={aiLoad} style={{opacity:aiLoad?.6:1,cursor:aiLoad?"wait":"pointer"}}>
+                  {aiLoad?<span className="mspin">⟳</span>:"獲取建議"}
+                </Btn>
               </div>
-              {aiSug ? <div style={{fontSize:13,lineHeight:1.75}}>{aiSug}</div> : <div style={{fontSize:12,color:T.textL}}>獲取穿搭建議</div>}
+              {aiSug?<div style={{fontSize:13,color:T.text,lineHeight:1.75}}>{aiSug}</div>:<div style={{fontSize:12,color:T.textL}}>根據天氣、地點同活動，獲取個性化穿搭建議</div>}
             </Card>
 
-            <div style={{display:"flex",flexDirection:"column",gap:7}}>
-              {filtered.map(item=><ClothingRow key={item.id} item={item} selected={!!outfit.find(i=>i.id===item.id)} onToggle={toggleOutfit}/>)}
+            <div>
+              <FL style={{marginBottom:8}}>按場合篩選</FL>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+                {OCCASIONS.map(o=><Pill key={o} label={o} emoji={OCC_EMOJI[o]} active={occFilter===o} onClick={()=>setOcc(o)}/>)}
+              </div>
+              <FL style={{marginBottom:8}}>按衣物類型</FL>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+                {CATS.map(c=><Pill key={c} label={c} active={catFilter===c} onClick={()=>setCat(c)}/>)}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                {filtered.map(item=><ClothingRow key={item.id} item={item} selected={!!outfit.find(i=>i.id===item.id)} onToggle={toggleOutfit}/>)}
+                {!filtered.length&&<div style={{textAlign:"center",padding:"30px",color:T.textL,fontSize:13}}>未有符合條件嘅衣物</div>}
+              </div>
             </div>
 
             {outfit.length>0&&(
               <Card style={{borderColor:T.accent}}>
+                <FL>今日 Outfit — {outfit.length} 件</FL>
+                <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:12}}>
+                  {outfit.map(item=>(
+                    <div key={item.id} style={{display:"flex",alignItems:"center",gap:5,background:T.accentBg,borderRadius:20,padding:"4px 11px",fontSize:12,border:`1px solid ${T.accentL}`}}>
+                      {item.img?<img src={item.img} style={{width:16,height:16,borderRadius:3,objectFit:"contain",mixBlendMode:"multiply"}}/>:<span>{item.emoji}</span>}
+                      <span>{item.name}</span>
+                    </div>
+                  ))}
+                </div>
                 <Btn onClick={saveToCalendar} style={{width:"100%"}}>📅 儲存到日曆</Btn>
               </Card>
             )}
           </div>
         )}
 
+        {/* ══ WARDROBE ══ */}
         {tab==="wardrobe"&&(
           <div className="mfade">
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
-              <span style={{fontSize:13}}>{wardrobe.length} 件衣物</span>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <span style={{fontSize:13,color:T.textM}}>{wardrobe.length} 件衣物</span>
               <Btn variant="sm" onClick={()=>setAddMode(!addMode)}>+ 新增</Btn>
             </div>
+
             {addMode&&(
               <Card style={{marginBottom:14,borderColor:T.accentL}}>
-                <div onClick={()=>!uploading&&fileRef.current.click()} style={{border:`2px dashed ${T.accentL}`,borderRadius:10,padding:"18px",textAlign:"center",background:T.accentBg,cursor:"pointer"}}>
-                  {uploading ? <div className="mspin">⟳</div> : "📷 上載衣物相片 (AI 識別)"}
+                <FL>新增衣物</FL>
+                <div onClick={()=>!uploading&&fileRef.current.click()} style={{border:`2px dashed ${T.accentL}`,borderRadius:10,padding:"18px",textAlign:"center",cursor:uploading?"wait":"pointer",background:T.accentBg,marginBottom:12}}>
+                  {uploading
+                    ? <div style={{color:T.accent,fontSize:13}}><span className="mspin" style={{fontSize:20}}>⟳</span><div style={{marginTop:6}}>AI 識別衣物中…</div></div>
+                    : <><div style={{fontSize:28,marginBottom:4}}>📷</div><div style={{fontSize:13,color:T.accent,fontWeight:500}}>上載衣物相片</div><div style={{fontSize:11,color:T.textL,marginTop:2}}>AI 自動識別名稱、分類、場合</div></>
+                  }
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleWardrobeUpload}/>
-                {uploadErr && <div style={{color:T.danger,fontSize:11,marginTop:8}}>{uploadErr}</div>}
-                <Inp value={newName} placeholder="手動名稱" onChange={e=>setNewName(e.target.value)} style={{marginTop:10}}/>
-                <Btn onClick={addManual} style={{width:"100%",marginTop:10}}>手動新增</Btn>
-                <Btn variant="ghost" onClick={()=>setAddMode(false)} style={{width:"100%",marginTop:5}}>取消</Btn>
+                {uploadErr&&<div style={{fontSize:11,color:T.danger,marginBottom:8,padding:"6px 10px",background:"#fdf0ee",borderRadius:6}}>{uploadErr}</div>}
+                <div style={{color:T.textL,fontSize:11,textAlign:"center",marginBottom:10,letterSpacing:"0.08em"}}>— 或手動填寫 —</div>
+                <Inp value={newName} placeholder="衣物名稱" onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addManual()} style={{marginBottom:8}}/>
+                <select value={newCat} onChange={e=>setNewCat(e.target.value)} style={{...stInp,marginBottom:8}}>
+                  {CATS.filter(c=>c!=="全部").map(c=><option key={c}>{c}</option>)}
+                </select>
+                <FL style={{marginBottom:6}}>場合（可多選）</FL>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:12}}>
+                  {OCCASIONS.filter(o=>o!=="全部").map(o=><Pill key={o} label={o} emoji={OCC_EMOJI[o]} active={newOccs.includes(o)} onClick={()=>setNewOccs(p=>p.includes(o)?p.filter(x=>x!==o):[...p,o])}/>)}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn onClick={addManual} style={{flex:1}}>新增</Btn>
+                  <Btn variant="ghost" onClick={()=>setAddMode(false)} style={{flex:1}}>取消</Btn>
+                </div>
               </Card>
             )}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {filtered.map(item=>(
-                <div key={item.id} style={{borderRadius:12,border:`1px solid ${T.border}`,background:T.white,padding:8,position:"relative"}}>
-                  {item.img ? <img src={item.img} style={{width:"100%",height:100,objectFit:"contain"}}/> : <div style={{fontSize:40,textAlign:"center",padding:20}}>{item.emoji}</div>}
-                  <div style={{fontSize:12,fontWeight:500,marginTop:5}}>{item.name}</div>
-                  <button onClick={()=>setWardrobe(p=>p.filter(i=>i.id!==item.id))} style={{position:"absolute",top:5,right:5,background:"#fff",border:"none",borderRadius:10,width:20,height:20,fontSize:10}}>✕</button>
+
+            {editItem&&(
+              <Card style={{marginBottom:14,borderColor:T.accent}}>
+                <FL>編輯衣物</FL>
+                <Inp value={editItem.name} onChange={e=>setEditItem(p=>({...p,name:e.target.value}))} style={{marginBottom:8}}/>
+                <select value={editItem.category} onChange={e=>setEditItem(p=>({...p,category:e.target.value}))} style={{...stInp,marginBottom:8}}>
+                  {CATS.filter(c=>c!=="全部").map(c=><option key={c}>{c}</option>)}
+                </select>
+                <FL style={{marginBottom:6}}>場合</FL>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:12}}>
+                  {OCCASIONS.filter(o=>o!=="全部").map(o=><Pill key={o} label={o} emoji={OCC_EMOJI[o]} active={(editItem.occasions||[]).includes(o)} onClick={()=>setEditItem(p=>({...p,occasions:(p.occasions||[]).includes(o)?(p.occasions||[]).filter(x=>x!==o):[...(p.occasions||[]),o]}))}/>)}
                 </div>
-              ))}
+                <div style={{display:"flex",gap:8}}>
+                  <Btn onClick={saveEdit} style={{flex:1}}>儲存</Btn>
+                  <Btn variant="ghost" onClick={()=>setEditItem(null)} style={{flex:1}}>取消</Btn>
+                </div>
+              </Card>
+            )}
+
+            <FL style={{marginBottom:6}}>場合篩選</FL>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+              {OCCASIONS.map(o=><Pill key={o} label={o} emoji={OCC_EMOJI[o]} active={occFilter===o} onClick={()=>setOcc(o)}/>)}
             </div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
+              {CATS.map(c=><Pill key={c} label={c} active={catFilter===c} onClick={()=>setCat(c)}/>)}
+            </div>
+
+            {filtered.some(i=>i.img)?(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {filtered.map(item=>item.img?(
+                  <div key={item.id} style={{borderRadius:12,overflow:"hidden",border:`1px solid ${T.border}`,background:T.white,position:"relative"}}>
+                    <div style={{background:"#fff",padding:8,display:"flex",alignItems:"center",justifyContent:"center",minHeight:130}}>
+                      <img src={item.img} style={{maxWidth:"100%",maxHeight:120,objectFit:"contain",mixBlendMode:"multiply"}}/>
+                    </div>
+                    <div style={{padding:"8px 10px",borderTop:`1px solid ${T.border}`}}>
+                      <div style={{fontSize:12,fontWeight:500,color:T.text}}>{item.name}</div>
+                      <div style={{fontSize:10,color:T.textL,marginTop:1}}>{item.category}</div>
+                      {item.occasions?.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}}>{item.occasions.map(o=><span key={o} style={{fontSize:9,padding:"1px 6px",borderRadius:8,background:T.accentBg,color:T.accent}}>{OCC_EMOJI[o]} {o}</span>)}</div>}
+                    </div>
+                    <div style={{position:"absolute",top:6,right:6,display:"flex",gap:4}}>
+                      <button onClick={()=>setEditItem(item)} style={{background:"rgba(255,255,255,.9)",border:`1px solid ${T.border}`,borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",color:T.accent}}>✎</button>
+                      <button onClick={()=>setWardrobe(p=>p.filter(i=>i.id!==item.id))} style={{background:"rgba(255,255,255,.9)",border:`1px solid ${T.border}`,borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",color:T.textM}}>✕</button>
+                    </div>
+                  </div>
+                ):(
+                  <ClothingRow key={item.id} item={item} selected={false} onToggle={()=>{}} onDelete={id=>setWardrobe(p=>p.filter(i=>i.id!==id))}/>
+                ))}
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                {filtered.map(item=><ClothingRow key={item.id} item={item} selected={false} onToggle={()=>{}} onDelete={id=>setWardrobe(p=>p.filter(i=>i.id!==id))}/>)}
+              </div>
+            )}
           </div>
         )}
 
+        {/* ══ CALENDAR ══ */}
         {tab==="calendar"&&(
           <div className="mfade">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <button onClick={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()-1))}>‹</button>
-              <span style={{fontFamily:T.serif,fontSize:20}}>{mLabel}</span>
-              <button onClick={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()+1))}>›</button>
+              <button onClick={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()-1))} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:24,padding:4,lineHeight:1}}>‹</button>
+              <span style={{fontFamily:T.serif,fontSize:20,fontWeight:400}}>{mLabel}</span>
+              <button onClick={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()+1))} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:24,padding:4,lineHeight:1}}>›</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:18}}>
+              {["日","一","二","三","四","五","六"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:T.textL,paddingBottom:5}}>{d}</div>)}
+              {Array(fdow).fill(null).map((_,i)=><div key={`g${i}`}/>)}
               {Array.from({length:dim},(_,i)=>i+1).map(d=>{
-                const k=dk(d);
-                return <div key={k} onClick={()=>setSelDate(k)} style={{aspectRatio:1,display:"flex",alignItems:"center",justifyContent:"center",background:k===selDate?T.accent:T.white,color:k===selDate?T.white:T.text,borderRadius:8}}>{d}</div>
+                const k=dk(d),entry=calData[k],isSel=k===selDate,isToday=k===todayKey;
+                return(
+                  <div key={k} onClick={()=>{setSelDate(k);setLocInput(dateLocations[k]||"Hong Kong");}}
+                    style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:8,cursor:"pointer",transition:"all .12s",position:"relative",fontSize:13,background:isSel?T.accent:isToday?T.accentBg:"none",border:isToday&&!isSel?`1px solid ${T.accentL}`:"1px solid transparent",color:isSel?T.white:T.text,fontWeight:isToday?600:400}}>
+                    {d}
+                    {entry?.outfitIds?.length>0&&<div style={{width:4,height:4,borderRadius:"50%",background:isSel?"rgba(255,255,255,.7)":T.accent,position:"absolute",bottom:4}}/>}
+                    {dateLocations[k]&&dateLocations[k]!=="Hong Kong"&&<div style={{fontSize:7,position:"absolute",top:3,right:4,color:isSel?T.white:T.accentL}}>✈</div>}
+                  </div>
+                );
               })}
             </div>
+            <Card>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div>
+                  <FL style={{marginBottom:2}}>{selDate}</FL>
+                  {selEntry?.label&&<div style={{fontSize:14,color:T.accent,fontWeight:500}}>{selEntry.label}</div>}
+                </div>
+                {selEntry?.location&&<div style={{fontSize:11,color:T.textL}}>📍 {selEntry.location}</div>}
+              </div>
+              {selEntry?.outfitIds?.length>0?(
+                <>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+                    {selEntry.outfitIds.map(id=>{
+                      const item=wardrobe.find(i=>i.id===id); if(!item)return null;
+                      return <div key={id} style={{display:"flex",alignItems:"center",gap:5,background:T.accentBg,borderRadius:20,padding:"4px 10px",fontSize:12,border:`1px solid ${T.accentL}`}}>{item.img?<img src={item.img} style={{width:14,height:14,borderRadius:2,objectFit:"contain",mixBlendMode:"multiply"}}/>:<span>{item.emoji}</span>}<span>{item.name}</span></div>;
+                    })}
+                  </div>
+                  <Btn variant="ghost" style={{fontSize:11,padding:"5px 12px"}} onClick={()=>{const c={...calData};if(c[selDate]){const e={...c[selDate]};delete e.outfitIds;delete e.label;c[selDate]=e;}setCalData(c);}}>🗑 刪除記錄</Btn>
+                </>
+              ):(
+                <div style={{fontSize:12,color:T.textL}}>未有穿搭記錄 — 去「今日穿搭」選好衫後儲存</div>
+              )}
+            </Card>
           </div>
         )}
 
+        {/* ══ JOURNAL ══ */}
         {tab==="journal"&&(
           <div className="mfade">
-            <Card>
-              <FL>上載今日穿搭照</FL>
-              <Btn onClick={()=>journalRef.current.click()} style={{width:"100%"}}>選擇相片</Btn>
+            <div style={{fontFamily:T.serif,fontSize:24,fontWeight:300,marginBottom:3}}><em>穿搭日誌</em></div>
+            <div style={{fontSize:12,color:T.textL,marginBottom:18}}>原圖保存 — 記錄真實風格的每一天</div>
+            <Card style={{marginBottom:14}}>
+              <FL>為 {selDate} 上載穿搭照</FL>
+              <div onClick={()=>journalRef.current.click()} style={{border:`2px dashed ${T.accentL}`,borderRadius:10,padding:"18px",textAlign:"center",cursor:"pointer",background:T.accentBg}}>
+                <div style={{fontSize:26,marginBottom:4}}>🪞</div>
+                <div style={{fontSize:12,color:T.accent,fontWeight:500}}>上載鏡前照 / 整體 Look</div>
+                <div style={{fontSize:11,color:T.textL,marginTop:2}}>原圖保存，不作 AI 處理</div>
+              </div>
               <input ref={journalRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleJournalUpload}/>
             </Card>
-            {Object.entries(calData).map(([date,entry])=>entry.journalImg&&(
-              <Card key={date} style={{marginTop:10}}>
-                <FL>{date}</FL>
-                <img src={entry.journalImg} style={{width:"100%",borderRadius:10}}/>
+            {Object.entries(calData).filter(([,v])=>v.journalImg||v.outfitIds?.length).sort(([a],[b])=>b.localeCompare(a)).map(([date,entry])=>(
+              <Card key={date} style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                  <div>
+                    <div style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>{date}</div>
+                    {entry.label&&<div style={{fontSize:12,color:T.accent,marginTop:2}}>{entry.label}</div>}
+                  </div>
+                  {entry.location&&<div style={{fontSize:11,color:T.textL}}>📍 {entry.location}</div>}
+                </div>
+                {entry.journalImg&&(
+                  <div style={{position:"relative",marginBottom:10}}>
+                    <img src={entry.journalImg} style={{width:"100%",borderRadius:10,maxHeight:320,objectFit:"cover",display:"block"}}/>
+                    <button onClick={()=>setCalData(p=>({...p,[date]:{...p[date],journalImg:null}}))} style={{position:"absolute",top:8,right:8,background:"rgba(255,255,255,.85)",border:"none",borderRadius:"50%",width:26,height:26,cursor:"pointer",color:T.textM,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                )}
+                {entry.outfitIds?.length>0&&(
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {entry.outfitIds.map(id=>{
+                      const item=wardrobe.find(i=>i.id===id); if(!item)return null;
+                      return <div key={id} style={{display:"flex",alignItems:"center",gap:5,background:T.surface,borderRadius:20,padding:"3px 10px",fontSize:11,border:`1px solid ${T.border}`}}>{item.img?<img src={item.img} style={{width:14,height:14,borderRadius:2,objectFit:"contain",mixBlendMode:"multiply"}}/>:<span>{item.emoji}</span>}<span style={{color:T.textM}}>{item.name}</span></div>;
+                    })}
+                  </div>
+                )}
               </Card>
             ))}
+            {!Object.values(calData).some(v=>v.journalImg||v.outfitIds?.length)&&(
+              <div style={{textAlign:"center",padding:"50px 20px",color:T.textL}}>
+                <div style={{fontFamily:T.serif,fontSize:36,marginBottom:10,opacity:.4}}>✦</div>
+                <div style={{fontSize:13}}>日誌仍是空白的<br/>由今日開始記錄你的風格旅程</div>
+              </div>
+            )}
           </div>
         )}
+
+        <div style={{height:"env(safe-area-inset-bottom,16px)"}}/>
       </div>
 
-      <div style={{flexShrink:0,background:"#f5f0e8",padding:10,textAlign:"center",fontSize:10,paddingBottom:"max(env(safe-area-inset-bottom), 10px)"}}>
-        💾 所有資料儲存在本地裝置
+      {/* footer */}
+      <div style={{flexShrink:0,background:"rgba(250,248,244,.95)",borderTop:`1px solid ${T.border}`,padding:"7px 16px",paddingBottom:`max(env(safe-area-inset-bottom,0px),7px)`,display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11}}>💾</span>
+        <span style={{fontSize:10,color:T.textL}}>所有資料自動儲存喺此裝置</span>
       </div>
     </div>
   );
@@ -459,5 +652,6 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
+
 </body>
 </html>
